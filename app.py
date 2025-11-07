@@ -1,7 +1,6 @@
 """
 Taller IA: Aplicación Multimodal con OCR y LLMs
-Curso: Inteligencia Artificial
-Universidad: EAFIT
+Curso: Inteligencia Artificial - Universidad EAFIT
 Profesor: Jorge Padilla
 """
 
@@ -36,14 +35,14 @@ st.header("📸 Módulo 1: Extracción de Texto (OCR)")
 
 @st.cache_resource
 def load_ocr_reader():
-    return easyocr.Reader(['es', 'en'])
+    return easyocr.Reader(["es", "en"])
 
 with st.spinner("Cargando modelo OCR..."):
     reader = load_ocr_reader()
 
 uploaded_file = st.file_uploader(
     "Sube una imagen con texto",
-    type=['png', 'jpg', 'jpeg'],
+    type=["png", "jpg", "jpeg"],
     help="Formatos soportados: PNG, JPG, JPEG"
 )
 
@@ -55,12 +54,12 @@ if uploaded_file is not None:
     if st.button("Extraer Texto", type="primary"):
         with st.spinner("Extrayendo texto de la imagen..."):
             result = reader.readtext(image_np)
-            extracted_text = "\n".join([d[1] for d in result])
-            st.session_state['extracted_text'] = extracted_text
+            extracted_text = "\n".join([str(d[1]) for d in result])
+            st.session_state["extracted_text"] = extracted_text
 
-    if 'extracted_text' in st.session_state:
+    if "extracted_text" in st.session_state:
         st.success("✅ Texto extraído exitosamente")
-        st.text_area("Texto extraído:", value=st.session_state['extracted_text'], height=200)
+        st.text_area("Texto extraído:", value=st.session_state["extracted_text"], height=200)
 
 st.markdown("---")
 
@@ -69,23 +68,25 @@ st.markdown("---")
 # =============================================================================
 st.header("🧩 Módulo 2 y 3: Análisis con Modelos de Lenguaje")
 
-if 'extracted_text' not in st.session_state or not st.session_state['extracted_text']:
+if "extracted_text" not in st.session_state or not st.session_state["extracted_text"]:
     st.info("👆 Primero extrae texto de una imagen en la sección superior.")
 else:
-    text_input = st.session_state['extracted_text']
+    text_input = st.session_state["extracted_text"]
     provider = st.radio("Proveedor:", ["GROQ", "Hugging Face"])
 
-    # Parámetros generales
     temperature = st.slider("Creatividad (temperature):", 0.0, 2.0, 0.7, 0.1)
     max_tokens = st.slider("Máx. tokens (longitud):", 50, 2000, 500, 50)
     st.markdown("---")
 
+    # -------------------------------------------------------------------------
+    # GROQ
+    # -------------------------------------------------------------------------
     if provider == "GROQ":
         st.subheader("💬 Análisis con GROQ (llama-3.1-8b-instant)")
 
         groq_api_key = os.getenv("GROQ_API_KEY")
         if not groq_api_key:
-            st.error("❌ No se encontró GROQ_API_KEY en .envv")
+            st.error("❌ No se encontró GROQ_API_KEY en .env")
         else:
             task = st.selectbox(
                 "Tarea a realizar:",
@@ -99,8 +100,8 @@ else:
                     "Traducir al inglés": "Traduce el siguiente texto al inglés:"
                 }
 
-                client = Groq(api_key=groq_api_key)
                 try:
+                    client = Groq(api_key=groq_api_key)
                     with st.spinner("Analizando con GROQ..."):
                         chat = client.chat.completions.create(
                             model="llama-3.1-8b-instant",
@@ -113,18 +114,20 @@ else:
                         )
                         response = chat.choices[0].message.content
                         st.subheader("🧠 Respuesta del modelo:")
-                        st.write(response)
+                        st.markdown(response)
                         st.info(f"Modelo: llama-3.1-8b-instant | Tarea: {task}")
-
                 except Exception as e:
                     st.error(f"Error al conectar con GROQ: {e}")
 
+    # -------------------------------------------------------------------------
+    # HUGGING FACE
+    # -------------------------------------------------------------------------
     elif provider == "Hugging Face":
         st.subheader("🤗 Análisis con Hugging Face")
 
         hf_api_key = os.getenv("HUGGINGFACE_API_KEY")
         if not hf_api_key:
-            st.error("❌ No se encontró HUGGINGFACE_API_KEY en .envv")
+            st.error("❌ No se encontró HUGGINGFACE_API_KEY en .env")
         else:
             task = st.selectbox(
                 "Tarea a realizar:",
@@ -135,24 +138,37 @@ else:
                 try:
                     with st.spinner("Analizando con Hugging Face..."):
                         if task == "Resumir texto":
-                            summarizer = pipeline("summarization", model="facebook/bart-base", token=hf_api_key)
+                            summarizer = pipeline(
+                                "summarization",
+                                model="facebook/bart-large-cnn",
+                                use_auth_token=hf_api_key,
+                                trust_remote_code=True
+                            )
                             result = summarizer(text_input, max_length=100, min_length=25, do_sample=False)
                             output = result[0]["summary_text"]
 
                         elif task == "Identificar entidades":
-                            ner_model = pipeline("ner", model="Davlan/distilbert-base-multilingual-cased-ner-hrl", token=hf_api_key)
+                            ner_model = pipeline(
+                                "ner",
+                                model="Davlan/distilbert-base-multilingual-cased-ner-hrl",
+                                use_auth_token=hf_api_key,
+                                aggregation_strategy="simple"
+                            )
                             entities = ner_model(text_input)
                             output = "\n".join([f"{ent['word']} → {ent['entity_group']}" for ent in entities])
 
                         elif task == "Traducir al inglés":
-                            translator = pipeline("translation", model="Helsinki-NLP/opus-mt-es-en", token=hf_api_key)
+                            translator = pipeline(
+                                "translation",
+                                model="Helsinki-NLP/opus-mt-es-en",
+                                use_auth_token=hf_api_key
+                            )
                             translation = translator(text_input)
                             output = translation[0]["translation_text"]
 
                         st.subheader("🧠 Resultado del análisis:")
                         st.write(output)
                         st.info(f"Modelo utilizado: {task}")
-
                 except Exception as e:
                     st.error(f"Error al usar Hugging Face: {e}")
 
@@ -171,7 +187,7 @@ with st.sidebar:
     **Modelos:**
     - GROQ → `llama-3.1-8b-instant`
     - Hugging Face →  
-        🧾 `facebook/bart-base` (resumen)  
+        🧾 `facebook/bart-large-cnn` (resumen)  
         🧍 `Davlan/distilbert-base-multilingual-cased-ner-hrl` (entidades)  
         🌍 `Helsinki-NLP/opus-mt-es-en` (traducción)
     """)
@@ -180,12 +196,5 @@ with st.sidebar:
     groq_key = os.getenv("GROQ_API_KEY")
     hf_key = os.getenv("HUGGINGFACE_API_KEY")
 
-    if groq_key:
-        st.success("GROQ configurado")
-    else:
-        st.error("GROQ no configurado")
-
-    if hf_key:
-        st.success("Hugging Face configurado")
-    else:
-        st.error("Hugging Face no configurado")
+    st.success("GROQ configurado" if groq_key else "GROQ no configurado")
+    st.success("Hugging Face configurado" if hf_key else "Hugging Face no configurado")
