@@ -124,19 +124,71 @@ else:
     # HUGGING FACE
     # -------------------------------------------------------------------------
     elif provider == "Hugging Face":
-        st.subheader("🤗 Análisis con Hugging Face (InferenceClient)")
+        st.subheader("🤗 Análisis con Hugging Face")
 
         hf_api_key = os.getenv("HUGGINGFACE_API_KEY")
         if not hf_api_key:
             st.error("❌ No se encontró HUGGINGFACE_API_KEY en .env")
         else:
-            from huggingface_hub import InferenceClient
+            import requests
+            import re
+            import json
 
-            @st.cache_resource
-            def load_hf_client():
-                return InferenceClient(token=hf_api_key)
+            def limpiar_salida(texto):
+                """Limpia estructuras técnicas como TranslationOutput(...) o SummarizationOutput(...)."""
+                if not texto:
+                    return ""
+                texto = re.sub(r"[A-Za-z]+Output\([^']*'([^']+)'\)", r"\1", texto)
+                texto = texto.replace("\\n", "\n").replace("\\xa0", " ").strip("'\" ")
+                return texto.strip()
 
-            client = load_hf_client()
+            def hf_infer(model: str, inputs: str):
+                """Llamada segura al nuevo endpoint de inferencia de Hugging Face."""
+                url = f"https://router.huggingface.co/hf-inference/models/{model}"
+                headers = {"Authorization": f"Bearer {hf_api_key}"}
+                payload = {"inputs": inputs}
+                try:
+                    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+                    if resp.status_code != 200:
+                        return f"⚠️ Error {resp.status_code}: {resp.text}"
+
+                    data = resp.json()
+                    # Caso 1: lista vacía
+                    if isinstance(data, list) and not data:
+                        return "No se detectaron resultados."
+
+                    # Caso 2: lista con elementos
+                    if isinstance(data, list):
+                        item = data[0]
+                        if isinstance(item, dict):
+                            # Para resumen o traducción
+                            if "summary_text" in item:
+                                return item["summary_text"]
+                            if "translation_text" in item:
+                                return item["translation_text"]
+                            # Para NER o formato libre
+                            if "entity_group" in item:
+                                entidades = [
+                                    f"{ent.get('word','')} → {ent.get('entity_group',ent.get('entity',''))}"
+                                    for ent in data
+                                ]
+                                return "\n".join(entidades)
+                            return str(item)
+                        return str(item)
+
+                    # Caso 3: diccionario
+                    if isinstance(data, dict):
+                        return (
+                            data.get("summary_text")
+                            or data.get("translation_text")
+                            or str(data)
+                        )
+
+                    # Caso 4: otro tipo (string)
+                    return str(data)
+
+                except Exception as e:
+                    return f"⚠️ Error en la solicitud: {e}"
 
             task = st.selectbox(
                 "Tarea a realizar:",
@@ -144,36 +196,19 @@ else:
             )
 
             if st.button("Ejecutar análisis", type="primary"):
-                try:
-                    with st.spinner("Analizando con Hugging Face..."):
-                        if task == "Resumir texto":
-                            model = "sshleifer/distilbart-cnn-12-6"
-                            result = client.summarization(text_input, model=model)
-                            output = result[0]["summary_text"] if isinstance(result, list) else str(result)
+                with st.spinner("Analizando con Hugging Face..."):
+                    model = ""
+                    output = ""
+                    if task == "Resumir texto":
+                        model = "sshleifer/distilbart-cnn-12-6"
+                    elif task == "Identificar entidades":
+                        model = "Davlan/distilbert-base-multilingual-cased-ner-hrl"
+                    elif task == "Traducir al inglés":
+                        model = "Helsinki-NLP/opus-mt-es-en"
 
-                        elif task == "Identificar entidades":
-                            model = "Davlan/distilbert-base-multilingual-cased-ner-hrl"
-                            result = client.ner(text_input, model=model)
-                            output = "\n".join(
-                                f"{ent['word']} → {ent['entity_group']} ({ent['score']:.2f})"
-                                for ent in result
-                            )
-
-                        elif task == "Traducir al inglés":
-                            model = "Helsinki-NLP/opus-mt-es-en"
-                            result = client.translation(text_input, model=model)
-                            output = result[0]["translation_text"] if isinstance(result, list) else str(result)
-
-                        else:
-                            output = "Tarea no soportada."
-
-                        st.subheader("🧠 Resultado del análisis (Hugging Face InferenceClient):")
-                        st.write(output)
-                        st.info(f"Modelo: {model} | Tarea: {task}")
-
-                except Exception as e:
-                    st.error(f"Error al usar Hugging Face: {e}")
-
+                    output = hf_infer(model, text_input)
+                    st.subheader("🧠 Resultado del análisis:")
+                    st.markdown(limpiar_salida(output))
 
 
 # =============================================================================
