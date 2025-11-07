@@ -13,6 +13,7 @@ from transformers import pipeline
 import os
 from dotenv import load_dotenv
 
+
 # =============================================================================
 # CONFIGURACIÓN GENERAL
 # =============================================================================
@@ -123,12 +124,20 @@ else:
     # HUGGING FACE
     # -------------------------------------------------------------------------
     elif provider == "Hugging Face":
-        st.subheader("🤗 Análisis con Hugging Face")
+        st.subheader("🤗 Análisis con Hugging Face (InferenceClient)")
 
         hf_api_key = os.getenv("HUGGINGFACE_API_KEY")
         if not hf_api_key:
             st.error("❌ No se encontró HUGGINGFACE_API_KEY en .env")
         else:
+            from huggingface_hub import InferenceClient
+
+            @st.cache_resource
+            def load_hf_client():
+                return InferenceClient(token=hf_api_key)
+
+            client = load_hf_client()
+
             task = st.selectbox(
                 "Tarea a realizar:",
                 ["Resumir texto", "Identificar entidades", "Traducir al inglés"]
@@ -138,39 +147,34 @@ else:
                 try:
                     with st.spinner("Analizando con Hugging Face..."):
                         if task == "Resumir texto":
-                            summarizer = pipeline(
-                                "summarization",
-                                model="facebook/bart-large-cnn",
-                                use_auth_token=hf_api_key,
-                                trust_remote_code=True
-                            )
-                            result = summarizer(text_input, max_length=100, min_length=25, do_sample=False)
-                            output = result[0]["summary_text"]
+                            model = "sshleifer/distilbart-cnn-12-6"
+                            result = client.summarization(text_input, model=model)
+                            output = result[0]["summary_text"] if isinstance(result, list) else str(result)
 
                         elif task == "Identificar entidades":
-                            ner_model = pipeline(
-                                "ner",
-                                model="Davlan/distilbert-base-multilingual-cased-ner-hrl",
-                                use_auth_token=hf_api_key,
-                                aggregation_strategy="simple"
+                            model = "Davlan/distilbert-base-multilingual-cased-ner-hrl"
+                            result = client.ner(text_input, model=model)
+                            output = "\n".join(
+                                f"{ent['word']} → {ent['entity_group']} ({ent['score']:.2f})"
+                                for ent in result
                             )
-                            entities = ner_model(text_input)
-                            output = "\n".join([f"{ent['word']} → {ent['entity_group']}" for ent in entities])
 
                         elif task == "Traducir al inglés":
-                            translator = pipeline(
-                                "translation",
-                                model="Helsinki-NLP/opus-mt-es-en",
-                                use_auth_token=hf_api_key
-                            )
-                            translation = translator(text_input)
-                            output = translation[0]["translation_text"]
+                            model = "Helsinki-NLP/opus-mt-es-en"
+                            result = client.translation(text_input, model=model)
+                            output = result[0]["translation_text"] if isinstance(result, list) else str(result)
 
-                        st.subheader("🧠 Resultado del análisis:")
+                        else:
+                            output = "Tarea no soportada."
+
+                        st.subheader("🧠 Resultado del análisis (Hugging Face InferenceClient):")
                         st.write(output)
-                        st.info(f"Modelo utilizado: {task}")
+                        st.info(f"Modelo: {model} | Tarea: {task}")
+
                 except Exception as e:
                     st.error(f"Error al usar Hugging Face: {e}")
+
+
 
 # =============================================================================
 # SIDEBAR: Información

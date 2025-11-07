@@ -6,3 +6,4 @@ groq>=0.8.0
 transformers>=4.46.0
 torch>=2.4.0
 python-dotenv>=1.0.1
+pip install hf_xet
