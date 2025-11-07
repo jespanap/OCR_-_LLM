@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 # =============================================================================
 # CONFIGURACIÓN GENERAL
 # =============================================================================
-load_dotenv(dotenv_path=".envv")
+load_dotenv(dotenv_path=".env")
 
 st.set_page_config(
     page_title="Taller IA: OCR + LLM",
